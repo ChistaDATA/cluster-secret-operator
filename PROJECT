@@ -1,0 +1,18 @@
+domain: chistadata.io
+layout:
+- go.kubebuilder.io/v4-alpha
+plugins:
+  manifests.sdk.operatorframework.io/v2: {}
+  scorecard.sdk.operatorframework.io/v2: {}
+projectName: cluster-secrets
+repo: github.com/ChistaDATA/cluster-secret-operator
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: chistadata.io
+  kind: ClusterSecret
+  path: github.com/ChistaDATA/cluster-secret-operator/api/v1
+  version: v1
+version: "3"
