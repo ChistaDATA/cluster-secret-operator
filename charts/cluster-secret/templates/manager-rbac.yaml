@@ -5,7 +5,9 @@ metadata:
   labels:
   {{- include "cluster-secret.labels" . | nindent 4 }}
 rules:
-- resources:
+- apiGroups:
+  - ""
+  resources:
   - secrets
   verbs:
   - create
