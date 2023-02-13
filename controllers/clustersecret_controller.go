@@ -28,7 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"strings"
 	"time"
 )
@@ -57,28 +57,28 @@ type ClusterSecretReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.13.0/pkg/reconcile
 func (r *ClusterSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+	log := ctrllog.FromContext(ctx)
 
 	clusterSecret := &v12.ClusterSecret{}
 	err := r.Get(ctx, req.NamespacedName, clusterSecret)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			log.Log.Info("ClusterSecret resource not found. Ignoring since object must be deleted")
+			log.Info("ClusterSecret resource not found. Ignoring since object must be deleted", "clusterSecret.Name", clusterSecret.Name)
 			return ctrl.Result{}, nil
 		}
-		log.Log.Error(err, "Failed to get ClusterSecret, requeuing the request")
+		log.Error(err, "Failed to get ClusterSecret, requeuing the request", "clusterSecret.Name", clusterSecret.Name)
 		return ctrl.Result{RequeueAfter: time.Minute}, err
 	}
 
 	if clusterSecret.Status.Conditions == nil || len(clusterSecret.Status.Conditions) == 0 {
 		meta.SetStatusCondition(&clusterSecret.Status.Conditions, metav1.Condition{Type: typeAvailableClusterSecret, Status: metav1.ConditionUnknown, Reason: "Reconciling", Message: "Starting reconciliation"})
 		if err = r.Status().Update(ctx, clusterSecret); err != nil {
-			log.Log.Error(err, "Failed to update ClusterSecret status")
+			log.Error(err, "Failed to update ClusterSecret status", "clusterSecret.Name", clusterSecret.Name)
 			return ctrl.Result{}, err
 		}
 
 		if err := r.Get(ctx, req.NamespacedName, clusterSecret); err != nil {
-			log.Log.Error(err, "Failed to re-fetch ClusterSecret")
+			log.Error(err, "Failed to re-fetch ClusterSecret", "clusterSecret.Name", clusterSecret.Name)
 			return ctrl.Result{}, err
 		}
 	}
@@ -93,51 +93,22 @@ func (r *ClusterSecretReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	k8sNamespaceList := &v1.NamespaceList{}
 	err = r.List(ctx, k8sNamespaceList)
 	if err != nil {
-		meta.SetStatusCondition(&clusterSecret.Status.Conditions, metav1.Condition{Type: typeAvailableClusterSecret,
-			Status: metav1.ConditionFalse, Reason: "Reconciling",
-			Message: fmt.Sprintf("Failed to get namespace list: (%s)", err)})
-		if err = r.Status().Update(ctx, clusterSecret); err != nil {
-			log.Log.Error(err, "Failed to update ClusterSecret status")
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{}, err
+		return r.updateClusterSecretStatus(ctx, metav1.ConditionFalse, clusterSecret, fmt.Sprintf("Failed to get namespace list: (%s)", err), err)
 	}
 	namespaceList, err := r.filterNamespaceList(k8sNamespaceList, clusterSecret)
 	if err != nil {
-		meta.SetStatusCondition(&clusterSecret.Status.Conditions, metav1.Condition{Type: typeAvailableClusterSecret,
-			Status: metav1.ConditionFalse, Reason: "Reconciling",
-			Message: fmt.Sprintf("Failed to filter namespace list: (%s)", err)})
-		if err = r.Status().Update(ctx, clusterSecret); err != nil {
-			log.Log.Error(err, "Failed to update ClusterSecret status")
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{}, err
+		return r.updateClusterSecretStatus(ctx, metav1.ConditionFalse, clusterSecret, fmt.Sprintf("Failed to filter namespace list (%s)", err), err)
 	}
 
 	if clusterSecret.Spec.ValueFrom.SecretName == "" {
 		if clusterSecret.Spec.Data == nil {
-			err = fmt.Errorf("the Data must be provided when the ValueFrom is not provided")
-			log.Log.Error(err, err.Error())
-
-			meta.SetStatusCondition(&clusterSecret.Status.Conditions, metav1.Condition{Type: typeAvailableClusterSecret,
-				Status: metav1.ConditionFalse, Reason: "Reconciling",
-				Message: fmt.Sprintf("Failed to filter namespace list: (%s)", err)})
-			if err = r.Status().Update(ctx, clusterSecret); err != nil {
-				log.Log.Error(err, "Failed to update ClusterSecret status")
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{}, err
+			msg := "the Data must be provided when the ValueFrom is not provided"
+			log.Error(err, msg, "clusterSecret.Name", clusterSecret.Name)
+			return r.updateClusterSecretStatus(ctx, metav1.ConditionFalse, clusterSecret, msg, err)
 		}
 		_, err = r.createNewSecrets(ctx, clusterSecret, ls, namespaceList)
 		if err != nil {
-			meta.SetStatusCondition(&clusterSecret.Status.Conditions, metav1.Condition{Type: typeAvailableClusterSecret,
-				Status: metav1.ConditionFalse, Reason: "Reconciling",
-				Message: fmt.Sprintf("Failed to create Secret: (%s)", err)})
-			if err = r.Status().Update(ctx, clusterSecret); err != nil {
-				log.Log.Error(err, "Failed to update ClusterSecret status")
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{}, err
+			return r.updateClusterSecretStatus(ctx, metav1.ConditionFalse, clusterSecret, fmt.Sprintf("Failed to create Secret: (%s)", err), err)
 		}
 	} else {
 		source := &v1.Secret{}
@@ -147,17 +118,9 @@ func (r *ClusterSecretReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}, source)
 		if err != nil {
 			if apierrors.IsNotFound(err) {
-				err = fmt.Errorf("the secret in the ValueFrom could not be found for the ClusterSecret %s", clusterSecret.Name)
-				log.Log.Error(err, err.Error())
-
-				meta.SetStatusCondition(&clusterSecret.Status.Conditions, metav1.Condition{Type: typeAvailableClusterSecret,
-					Status: metav1.ConditionFalse, Reason: "Reconciling",
-					Message: "The Secret in the ValueFrom could not be found"})
-				if err = r.Status().Update(ctx, clusterSecret); err != nil {
-					log.Log.Error(err, "Failed to update ClusterSecret status")
-					return ctrl.Result{}, err
-				}
-				return ctrl.Result{}, err
+				msg := "the secret in the ValueFrom could not be found"
+				log.Error(err, msg, "clusterSecret.Name", clusterSecret.Name)
+				return r.updateClusterSecretStatus(ctx, metav1.ConditionFalse, clusterSecret, msg, err)
 			}
 			return ctrl.Result{}, err
 		}
@@ -165,33 +128,33 @@ func (r *ClusterSecretReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		clusterSecret.Spec.Data = source.Data
 		_, err = r.createNewSecrets(ctx, clusterSecret, ls, namespaceList)
 		if err != nil {
-			meta.SetStatusCondition(&clusterSecret.Status.Conditions, metav1.Condition{Type: typeAvailableClusterSecret,
-				Status: metav1.ConditionFalse, Reason: "Reconciling",
-				Message: fmt.Sprintf("Failed to create Secret: (%s)", err)})
-			if err = r.Status().Update(ctx, clusterSecret); err != nil {
-				log.Log.Error(err, "Failed to update ClusterSecret status")
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{}, err
+			return r.updateClusterSecretStatus(ctx, metav1.ConditionFalse, clusterSecret, "Secrets creation has finished successfully", err)
 		}
 	}
 
+	return r.updateClusterSecretStatus(ctx, metav1.ConditionTrue, clusterSecret, fmt.Sprintf("Failed to create Secret: (%s)", err), nil)
+}
+
+func (r *ClusterSecretReconciler) updateClusterSecretStatus(ctx context.Context, status metav1.ConditionStatus, clusterSecret *v12.ClusterSecret, msg string, err error) (ctrl.Result, error) {
+	log := ctrllog.FromContext(ctx)
+
 	meta.SetStatusCondition(&clusterSecret.Status.Conditions, metav1.Condition{Type: typeAvailableClusterSecret,
-		Status: metav1.ConditionTrue, Reason: "Reconciling",
-		Message: "Secrets creation has finished successfully"})
+		Status: status, Reason: "Reconciling",
+		Message: msg})
 	if err := r.Status().Update(ctx, clusterSecret); err != nil {
-		log.Log.Error(err, "Failed to update ClusterSecret status")
+		log.Error(err, "Failed to update ClusterSecret status", "clusterSecret.Name", clusterSecret.Name)
 		return ctrl.Result{}, err
 	}
-
-	return ctrl.Result{}, nil
+	return ctrl.Result{}, err
 }
 
 func (r *ClusterSecretReconciler) createNewSecrets(ctx context.Context, clusterSecret *v12.ClusterSecret, ls map[string]string, namespaceList []string) ([]*v1.Secret, error) {
+	log := ctrllog.FromContext(ctx)
+
 	var secretList []*v1.Secret
-	log.Log.Info("Processing the cluster secret %s from namespace %s", clusterSecret.Name, clusterSecret.Namespace)
+	log.Info("Processing the cluster secret", "clusterSecret.Namespace", clusterSecret.Namespace, "clusterSecret.Name", clusterSecret.Name)
 	for _, n := range namespaceList {
-		log.Log.Info("Checking if the secret %s exists on namespace %s", clusterSecret.Name, n)
+		log.Info("Checking if the secret exists", "secret.Namespace", n, "secret.Name", clusterSecret.Name)
 		found := &v1.Secret{}
 		err := r.Get(ctx, types.NamespacedName{
 			Name:      clusterSecret.Name,
@@ -199,7 +162,7 @@ func (r *ClusterSecretReconciler) createNewSecrets(ctx context.Context, clusterS
 		}, found)
 		if err != nil {
 			if apierrors.IsNotFound(err) {
-				log.Log.Info("Secret not found, creating a new secret %s on namespace %s", clusterSecret.Name, n)
+				log.Info("Secret not found, creating a new secret", "secret.Namespace", n, "secret.Name", clusterSecret.Name)
 				newSecret := &v1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      clusterSecret.Name,
@@ -211,24 +174,24 @@ func (r *ClusterSecretReconciler) createNewSecrets(ctx context.Context, clusterS
 				}
 				err = r.Create(ctx, newSecret)
 				if err != nil {
-					log.Log.Error(err, err.Error())
+					log.Error(err, err.Error())
 					return nil, err
 				}
 				secretList = append(secretList, newSecret)
 				continue
 			}
-			log.Log.Error(err, "Error occurred when querying secret %s on namespace %s", clusterSecret.Name, n)
+			log.Error(err, "Error occurred when querying the secret", "secret.Namespace", n, "secret.Name", clusterSecret.Name)
 			return nil, err
 		} else {
-			log.Log.Info("Secret %s found on namespace %s, updating its values", clusterSecret.Name, n)
+			log.Info("Secret found, updating its values", "secret.Namespace", n, "secret.Name", clusterSecret.Name)
 			found.Type = clusterSecret.Spec.Type
 			found.Data = clusterSecret.Spec.Data
 			err = r.Update(ctx, found)
 			if err != nil {
-				log.Log.Error(err, err.Error())
+				log.Error(err, err.Error())
 				return nil, err
 			}
-			log.Log.Info("Secret %s from namespace %s, updated successfully", clusterSecret.Name, n)
+			log.Info("Secret updated successfully", "secret.Namespace", n, "secret.Name", clusterSecret.Name)
 			secretList = append(secretList, found)
 		}
 	}
