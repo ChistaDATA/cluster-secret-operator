@@ -1,0 +1,14 @@
+apiVersion: v1
+entries:
+  cluster-secret:
+  - apiVersion: v2
+    appVersion: 0.1.0
+    created: "2023-02-13T07:59:11.454271-03:00"
+    description: A Helm chart for Kubernetes
+    digest: 9e3e825262311df3b9e2d3145fa8c0a98c9306533edf59f008b04d7829fb3f5d
+    name: cluster-secret
+    type: application
+    urls:
+    - https://chistadata.github.io/cluster-secret-operator/cluster-secret-0.1.0.tgz
+    version: 0.1.0
+generated: "2023-02-13T07:59:11.453647-03:00"
