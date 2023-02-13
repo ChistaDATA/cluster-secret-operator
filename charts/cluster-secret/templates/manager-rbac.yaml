@@ -6,7 +6,7 @@ metadata:
   {{- include "cluster-secret.labels" . | nindent 4 }}
 rules:
 - resources:
-  - secret
+  - secrets
   verbs:
   - create
   - get

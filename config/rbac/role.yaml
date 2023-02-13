@@ -5,7 +5,7 @@ metadata:
   name: manager-role
 rules:
 - resources:
-  - secret
+  - secrets
   verbs:
   - create
   - get
