@@ -45,8 +45,8 @@ type ClusterSecretReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-//+kubebuilder:rbac:groups="",resources=namespaces,verbs=list
-//+kubebuilder:rbac:groups="",resources=secrets,verbs=get
+//+kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch
 //+kubebuilder:rbac:groups=chistadata.io,resources=clustersecrets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=chistadata.io,resources=clustersecrets/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=chistadata.io,resources=clustersecrets/finalizers,verbs=update
