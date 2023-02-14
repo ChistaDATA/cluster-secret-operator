@@ -128,11 +128,11 @@ func (r *ClusterSecretReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		clusterSecret.Spec.Data = source.Data
 		_, err = r.createNewSecrets(ctx, clusterSecret, ls, namespaceList)
 		if err != nil {
-			return r.updateClusterSecretStatus(ctx, metav1.ConditionFalse, clusterSecret, "Secrets creation has finished successfully", err)
+			return r.updateClusterSecretStatus(ctx, metav1.ConditionTrue, clusterSecret, fmt.Sprintf("Failed to create Secret: (%s)", err), err)
 		}
 	}
 
-	return r.updateClusterSecretStatus(ctx, metav1.ConditionTrue, clusterSecret, fmt.Sprintf("Failed to create Secret: (%s)", err), nil)
+	return r.updateClusterSecretStatus(ctx, metav1.ConditionFalse, clusterSecret, "Secrets creation has finished successfully", nil)
 }
 
 func (r *ClusterSecretReconciler) updateClusterSecretStatus(ctx context.Context, status metav1.ConditionStatus, clusterSecret *v12.ClusterSecret, msg string, err error) (ctrl.Result, error) {
@@ -154,7 +154,7 @@ func (r *ClusterSecretReconciler) createNewSecrets(ctx context.Context, clusterS
 	var secretList []*v1.Secret
 	log.Info("Processing the cluster secret", "clusterSecret.Namespace", clusterSecret.Namespace, "clusterSecret.Name", clusterSecret.Name)
 	for _, n := range namespaceList {
-		log.Info("Checking if the secret exists", "secret.Namespace", n, "secret.Name", clusterSecret.Name)
+		log.V(2).Info("Checking if the secret exists", "secret.Namespace", n, "secret.Name", clusterSecret.Name)
 		found := &v1.Secret{}
 		err := r.Get(ctx, types.NamespacedName{
 			Name:      clusterSecret.Name,

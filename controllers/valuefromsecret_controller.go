@@ -49,10 +49,10 @@ func (r *ValueFromSecretReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	err := r.Get(ctx, req.NamespacedName, secret)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			log.Info("Secret resource not found. Ignoring since object must be deleted", "secret.Namespace", secret.Namespace, "secret.Name", secret.Name)
+			log.Info("Secret resource not found. Ignoring since object must be deleted")
 			return ctrl.Result{}, nil
 		}
-		log.Error(err, "Failed to get Secret, requeuing the request", "secret.Namespace", secret.Namespace, "secret.Name", secret.Name)
+		log.Error(err, "Failed to get Secret, requeuing the request")
 		return ctrl.Result{RequeueAfter: time.Minute}, err
 	}
 
@@ -68,29 +68,29 @@ func (r *ValueFromSecretReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 	if clusterSecretName == "" {
-		log.Info("The secret doesn't have ClusterSecret annotation, skipping it", "secret.Namespace", secret.Namespace, "secret.Name", secret.Name)
+		log.V(2).Info("The secret doesn't have ClusterSecret annotation, skipping it")
 		return ctrl.Result{}, nil
 	}
-	log.Info("Starting the update for the ClusterSecret, triggered by an update to the secret", "secret.Namespace", secret.Namespace, "secret.Name", secret.Name, "clusterSecret.Name", clusterSecretName)
+	log.Info("Starting the update for the ClusterSecret, triggered by an update to the secret", "clusterSecret.Name", clusterSecretName)
 
 	clusterSecret := &v12.ClusterSecret{}
 	err = r.Get(ctx, types.NamespacedName{Name: clusterSecretName}, clusterSecret)
 	if err != nil {
-		log.Error(err, "Failed to get ClusterSecret %s", clusterSecretName)
-		return ctrl.Result{}, err
+		log.Error(err, "Failed to get ClusterSecret, requeuing the request")
+		return ctrl.Result{RequeueAfter: time.Minute}, nil
 	}
 	if clusterSecret.Spec.ValueFrom.SecretName != secret.Name || clusterSecret.Spec.ValueFrom.SecretNamespace != secret.Namespace {
-		log.Info("The secret is not defined in the ClusterSecret ValueFrom, please update the ClusterSecret resource. Requeing the request", "secret.Namespace", secret.Namespace, "secret.Name", secret.Name, "clusterSecret.Name", clusterSecretName)
+		log.Info("The secret is not defined in the ClusterSecret ValueFrom, please update the ClusterSecret resource. Requeing the request")
 		return ctrl.Result{RequeueAfter: 2 * time.Minute}, err
 	}
 	clusterSecret.Spec.Data = secret.Data
 
 	err = r.Update(ctx, clusterSecret)
 	if err != nil {
-		log.Error(err, "Failed to update ClusterSecret", "clusterSecret.Name", clusterSecretName)
-		return ctrl.Result{}, err
+		log.Error(err, "Failed to update ClusterSecret", "clusterSecret.Name", clusterSecret.Name)
+		return ctrl.Result{RequeueAfter: time.Minute}, err
 	}
-	log.Info("ClusterSecret updated successfully", "clusterSecret.Name", clusterSecretName)
+	log.Info("ClusterSecret updated successfully", "clusterSecret.Name", clusterSecret.Name)
 
 	return ctrl.Result{}, nil
 }
