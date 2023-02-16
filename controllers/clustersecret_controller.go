@@ -26,9 +26,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"reflect"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"strings"
 	"time"
 )
@@ -183,6 +186,14 @@ func (r *ClusterSecretReconciler) createNewSecrets(ctx context.Context, clusterS
 			log.Error(err, "Error occurred when querying the secret", "secret.Namespace", n, "secret.Name", clusterSecret.Name)
 			return nil, err
 		} else {
+			if found.Annotations["chistadata.io/name"] != "" {
+				err = fmt.Errorf("the secret %s/%s has the 'chistadata.io/name' annotation. This might be a cyclic reference, skipping the update", found.Namespace, found.Name)
+				return nil, err
+			}
+			if reflect.DeepEqual(clusterSecret.Spec.Data, found.Data) && clusterSecret.Spec.Type == found.Type {
+				log.V(2).Info("The secret value has not changed", "secret.Namespace", found.Namespace, "secret.Name", found.Name)
+				continue
+			}
 			log.Info("Secret found, updating its values", "secret.Namespace", n, "secret.Name", clusterSecret.Name)
 			found.Type = clusterSecret.Spec.Type
 			found.Data = clusterSecret.Spec.Data
@@ -271,5 +282,9 @@ func getLabels(name string) map[string]string {
 func (r *ClusterSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v12.ClusterSecret{}).
+		WithEventFilter(predicate.Funcs{
+			UpdateFunc: func(event event.UpdateEvent) bool {
+				return event.ObjectOld.GetGeneration() != event.ObjectNew.GetGeneration()
+			}}).
 		Complete(r)
 }

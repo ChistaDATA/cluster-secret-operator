@@ -23,9 +23,12 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"reflect"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"time"
 )
 
@@ -83,6 +86,11 @@ func (r *ValueFromSecretReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		log.Info("The secret is not defined in the ClusterSecret ValueFrom, please update the ClusterSecret resource. Requeing the request")
 		return ctrl.Result{RequeueAfter: 2 * time.Minute}, err
 	}
+	if reflect.DeepEqual(clusterSecret.Spec.Data, secret.Data) && clusterSecret.Spec.Type == secret.Type {
+		log.V(2).Info("The ClusterSecret Data and Type has not changed", "clusterSecret.Name", clusterSecret.Name)
+		return ctrl.Result{}, nil
+	}
+	clusterSecret.Spec.Type = secret.Type
 	clusterSecret.Spec.Data = secret.Data
 
 	err = r.Update(ctx, clusterSecret)
@@ -99,5 +107,11 @@ func (r *ValueFromSecretReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 func (r *ValueFromSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.Secret{}).
+		WithEventFilter(predicate.Funcs{
+			CreateFunc: func(event event.CreateEvent) bool {
+				// Check if annotation is present AND
+				// add 5 seconds as the initial delay for this controller to start watching events to prevent double execution at startup
+				return event.Object.GetAnnotations()["chistadata.io/name"] != "" && time.Now().Sub(event.Object.GetCreationTimestamp().Time) < 5*time.Second
+			}}).
 		Complete(r)
 }
