@@ -13,7 +13,7 @@ controllerManager:
   manager:
     image:
       repository: public.ecr.aws/chistadata/cluster-secret-operator
-      tag: v0.1.4
+      tag: v0.2.0
     resources:
       limits:
         cpu: 500m
