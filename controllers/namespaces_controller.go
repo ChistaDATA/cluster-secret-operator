@@ -70,6 +70,18 @@ func (r *NamespacesReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	for _, c := range clusterSecrets.Items {
+		list, err := FilterNamespaceList(&v1.NamespaceList{Items: []v1.Namespace{*namespace}}, &c)
+		if err != nil {
+			log.Error(err, "Failed to filter namespace list")
+			continue
+		}
+		if len(list) == 0 {
+			log.Info("Namespace does not match the ClusterSecret filters, skipping the update", "clusterSecret.Name", c.Name)
+			continue
+		}
+		if c.Annotations == nil {
+			c.Annotations = map[string]string{}
+		}
 		now := time.Now()
 		if c.Annotations["chistadata.io/new-namespace-created-at"] != "" {
 			clusterSecretLastUpdateFromNamespace, err := time.Parse(time.RFC3339, c.Annotations["chistadata.io/new-namespace-created-at"])
