@@ -98,7 +98,7 @@ func (r *ClusterSecretReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if err != nil {
 		return r.updateClusterSecretStatus(ctx, metav1.ConditionFalse, clusterSecret, fmt.Sprintf("Failed to get namespace list: (%s)", err), err)
 	}
-	namespaceList, err := r.filterNamespaceList(k8sNamespaceList, clusterSecret)
+	namespaceList, err := FilterNamespaceList(k8sNamespaceList, clusterSecret)
 	if err != nil {
 		return r.updateClusterSecretStatus(ctx, metav1.ConditionFalse, clusterSecret, fmt.Sprintf("Failed to filter namespace list (%s)", err), err)
 	}
@@ -209,7 +209,7 @@ func (r *ClusterSecretReconciler) createNewSecrets(ctx context.Context, clusterS
 	return secretList, nil
 }
 
-func (r *ClusterSecretReconciler) filterNamespaceList(k8sNamespaceList *v1.NamespaceList, clusterSecret *v12.ClusterSecret) ([]string, error) {
+func FilterNamespaceList(k8sNamespaceList *v1.NamespaceList, clusterSecret *v12.ClusterSecret) ([]string, error) {
 	// TODO: Improve this filtering logic
 	var namespaceList []string
 	for _, namespace := range clusterSecret.Spec.IncludeNamespaces {
@@ -284,7 +284,8 @@ func (r *ClusterSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&v12.ClusterSecret{}).
 		WithEventFilter(predicate.Funcs{
 			UpdateFunc: func(event event.UpdateEvent) bool {
-				return event.ObjectOld.GetGeneration() != event.ObjectNew.GetGeneration()
+				return event.ObjectOld.GetGeneration() != event.ObjectNew.GetGeneration() ||
+					event.ObjectOld.GetAnnotations()["chistadata.io/new-namespace-created-at"] != event.ObjectNew.GetAnnotations()["chistadata.io/new-namespace-created-at"]
 			}}).
 		Complete(r)
 }
