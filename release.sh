@@ -7,6 +7,8 @@
 # Prepare helm chart
 VERSION=$1
 
+git checkout -b "release-v${VERSION}"
+
 yq -i ".version = \"${VERSION}\"" charts/cluster-secret/Chart.yaml
 yq -i ".appVersion = \"${VERSION}\"" charts/cluster-secret/Chart.yaml
 make helm
@@ -32,7 +34,13 @@ git add charts/cluster-secret/values.yaml
 git add docs/index.yaml
 
 git commit -m "Release v${VERSION}"
-git push origin main
+git push origin "release-v${VERSION}"
+
+echo "Creating PR to merge from release-v${VERSION} to main"
+gh pr create -t "Release v${VERSION}" -B "main" -b "Release v${VERSION}"
+
+echo "Performing squash merge from release-v${VERSION} to main"
+gh pr merge --admin -s
 
 # Create GitHub release
 git tag "v${VERSION}"
